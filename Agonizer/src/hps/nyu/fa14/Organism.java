@@ -14,7 +14,7 @@ public class Organism {
     public static int[][] agonyMatrix;
     public static List<Graph> graphs;
     public static Random rand;
-    private final double mutationRate = 0.3;
+    private final double mutationRate = 0.15;
     private final boolean doMatching = true;
     private int agony = -1;
 

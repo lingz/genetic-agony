@@ -1,12 +1,15 @@
 package hps.nyu.fa14;
 
-import java.io.BufferedReader;
-import java.io.IOException;
-import java.io.InputStreamReader;
+import java.io.*;
+import java.nio.file.CopyOption;
+import java.nio.file.Files;
+import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
 import java.util.*;
 
 import com.google.common.base.Function;
 import com.google.common.collect.Collections2;
+import com.sun.xml.internal.bind.api.impl.NameConverter;
 
 public class Main {
     static int numNodes;
@@ -17,8 +20,10 @@ public class Main {
     static Random rand = new Random();
     static final boolean onlyBestBreed = true;
     private static final int populationSize = 1000;
+    private static final int numGenerations = 1000;
     static Organism bestOrganism;
     static int bestAgony = Integer.MAX_VALUE;
+    static String outfile;
 
     public static void prettyPrintAgony() {
         for (int i = 0; i < numGraphs; i++) {
@@ -31,6 +36,8 @@ public class Main {
 
 
     public static void main(String[] args) {
+        outfile = args[0];
+
         BufferedReader reader = new BufferedReader(new InputStreamReader(System.in));
 
         // parse out params
@@ -100,16 +107,14 @@ public class Main {
 
         Organism.setParams(numPartitions, graphs, agonyMatrix, rand);
 
+        for (int i = 0; i < 10; i++) {
+            System.out.println("Cycle done");
+            List<Organism> population = generatePopulation();
 
-        List<Organism> population = generatePopulation();
-
-        double averageAgony = 0;
-        for (int i = 0; i < 100; i++) {
-            generation(population);
-            averageAgony += getBestAgony(population);
+            for (int j = 0; j < numGenerations; j++) {
+                generation(population);
+            }
         }
-        System.out.println("average agony: " + averageAgony / 15);
-        System.out.println("Best agony: " + bestAgony);
     }
 
     private static List<Organism> generatePopulation() {
@@ -118,6 +123,36 @@ public class Main {
             organisms.add(new Organism());
         }
         return  organisms;
+    }
+
+    private static void printBest() {
+        for (int i = 0; i < numGraphs; i++) {
+            System.out.println(bestOrganism.dna.get(i) + 1);
+        }
+    }
+
+    private static void writeBest() {
+        try {
+            File file = new File(outfile + ".tmp");
+
+            file.createNewFile();
+
+            FileWriter fw = new FileWriter(file.getAbsoluteFile());
+            BufferedWriter bw = new BufferedWriter(fw);
+            for (int i = 0; i < numGraphs; i++) {
+                bw.write(new Integer(bestOrganism.dna.get(i) + 1).toString());
+                bw.newLine();
+            }
+            bw.close();
+            CopyOption[] options = new CopyOption[]{
+                    StandardCopyOption.REPLACE_EXISTING,
+                    StandardCopyOption.ATOMIC_MOVE
+            };
+            Files.move(Paths.get(outfile + ".tmp"), Paths.get(outfile), options);
+        } catch (IOException e) {
+            System.out.println("IO Error");
+        }
+
     }
 
     private static void generation(List<Organism> population) {
@@ -138,10 +173,6 @@ public class Main {
                     secondBestSeen = agony;
                 }
             }
-            System.out.println("----");
-            printDna(best);
-            printDna(secondBest);
-            System.out.println("----");
             for (int i = 0; i < populationSize; i++) {
                 population.set(i, new Organism(best, secondBest));
             }
@@ -153,32 +184,60 @@ public class Main {
                 }
             }
 
-            int totalSquaredDistance = 0;
-            List<Integer> cummulativeDistance = new ArrayList<Integer>(populationSize);
+            List<Integer> cumulativeDistance = new ArrayList<Integer>(populationSize);
 
-            for (Organism organism : population) {
-                
+            for (int i = 0; i < populationSize; i++) {
+                Organism organism = population.get(i);
+                int distance = maxAgony - organism.getAgony();
+                int transformedDistance = 1 + distance * distance;
+                if (i != 0) {
+                    transformedDistance += cumulativeDistance.get(i - 1);
+                }
+                cumulativeDistance.add(transformedDistance);
             }
 
+            List<Organism> newPopulation = new ArrayList<Organism>(populationSize);
+
+            for (int i = 0; i < populationSize; i++) {
+                Organism parentA = population.get(weightedRandom(cumulativeDistance));
+                Organism parentB = population.get(weightedRandom(cumulativeDistance));
+                newPopulation.add(new Organism(parentA, parentB));
+            }
+
+            population = newPopulation;
         }
         for (Organism organism : population) {
             if (organism.getAgony() < bestAgony) {
                 bestAgony = organism.getAgony();
                 bestOrganism = organism;
-                printDna(bestOrganism);
+                System.out.println("New Best: " + organism.getAgony());
+                writeBest();
             }
         }
     }
 
-    public static int getBestAgony(List<Organism> population) {
+    private static int weightedRandom(List<Integer> cumulativeWeights) {
+        int totalWeight = cumulativeWeights.get(cumulativeWeights.size() - 1);
+        int randPick = 1 + rand.nextInt(totalWeight);
+        for (int i = 0; i < cumulativeWeights.size(); i++) {
+            if (cumulativeWeights.get(i) >= randPick) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    public static Organism getBest(List<Organism> population) {
         int lowestAgony = Integer.MAX_VALUE;
+        Organism best = null;
         for (Organism organism : population) {
             int agony = organism.getAgony();
             if (agony < lowestAgony) {
                 lowestAgony = organism.getAgony();
+                best = organism;
             }
         }
-        return lowestAgony;
+        return best;
     }
 
     public static void printDna(Organism organism) {
